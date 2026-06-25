@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -13,7 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import {
   Star, GitFork, Users, BookOpen, MapPin, Building2, AtSign, Globe,
-  Loader2, RefreshCw, Zap, Lightbulb, Flame, ExternalLink,
+  Loader2, RefreshCw, Zap, Lightbulb, Flame, ExternalLink, Crosshair,
   GitCommitHorizontal, GitPullRequest, AlertCircle, GitBranch, CalendarDays,
 } from "lucide-react"
 
@@ -358,9 +359,14 @@ export default function DashboardPage() {
 
         {/* Topbar */}
         <div className="flex items-center justify-between">
-          <span className="font-mono text-xs text-muted-foreground">
-            devpulse<span className="text-foreground font-medium">/{user.login}</span>
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-xs text-muted-foreground">
+              devpulse<span className="text-foreground font-medium">/{user.login}</span>
+            </span>
+            <Link href="/compare" className="font-mono text-[10px] text-muted-foreground hover:text-foreground transition-colors hidden sm:inline-flex items-center gap-1">
+              <Crosshair className="size-3"/> Compare
+            </Link>
+          </div>
           <Popover>
             <PopoverTrigger className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
               <Avatar size="default">

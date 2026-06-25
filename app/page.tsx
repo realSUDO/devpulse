@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { buttonVariants } from "@/components/ui/button"
-import { Terminal } from "lucide-react"
+import { Terminal, Crosshair } from "lucide-react"
 
 export default function Page() {
   return (
@@ -18,6 +18,9 @@ export default function Page() {
       <div className="flex gap-3">
         <Link href="/signin" className={buttonVariants({ variant: "default" })}>
           Get started →
+        </Link>
+        <Link href="/compare" className={buttonVariants({ variant: "outline" })}>
+          <Crosshair className="size-3.5" /> Compare
         </Link>
       </div>
       <p className="font-mono text-xs text-muted-foreground mt-12">
