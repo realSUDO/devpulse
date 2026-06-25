@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id              String   @id @default(cuid())
+  username        String   @unique
+  name            String?
+  avatarUrl       String?
+  bio             String?
+  company         String?
+  location        String?
+  blog            String?
+  email           String?
+  twitterUsername String?
+  followers       Int      @default(0)
+  following       Int      @default(0)
+  publicRepos     Int      @default(0)
+  publicGists     Int      @default(0)
+  githubId        Int      @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastSynced      DateTime @default(now())
+
+  repos       Repo[]
+  aiSummaries AISummary[]
+  sessions    Session[]
+}
+
+model Repo {
+  id          String    @id @default(cuid())
+  githubId    Int       @unique
+  name        String
+  fullName    String
+  description String?
+  language    String?
+  stars       Int       @default(0)
+  forks       Int       @default(0)
+  watchers    Int       @default(0)
+  openIssues  Int       @default(0)
+  isFork      Boolean   @default(false)
+  isArchived  Boolean   @default(false)
+  url         String
+  topics      String[]
+  pushedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([stars(sort: Desc)])
+}
+
+model AISummary {
+  id        String   @id @default(cuid())
+  type      String
+  model     String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique @default(cuid())
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+}
