@@ -1,7 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import Link from "next/link"
+import { useEffect, useRef, useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -14,8 +13,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import {
   Star, GitFork, Users, BookOpen, MapPin, Building2, AtSign, Globe,
-  Loader2, RefreshCw, Zap, Lightbulb, Flame, ExternalLink, Crosshair,
-  GitCommitHorizontal, GitPullRequest, AlertCircle, GitBranch, CalendarDays,
+  Loader2, RefreshCw, Zap, Lightbulb, Flame, ExternalLink,
+  GitCommitHorizontal, GitPullRequest, AlertCircle, GitBranch, CalendarDays, Trophy,
 } from "lucide-react"
 
 interface GHUser {
@@ -219,8 +218,104 @@ function MD({ src }: { src: string }) {
   )
 }
 
+const RANKS = [
+  { name: "Iron 1", img: "3624-valorant-iron-1.png", threshold: 10, color: "#4f5154" },
+  { name: "Iron 2", img: "7351-valorant-iron-2.png", threshold: 25, color: "#4f5154" },
+  { name: "Iron 3", img: "1854-valorant-iron-3.png", threshold: 50, color: "#4f5154" },
+  { name: "Bronze 1", img: "4159-valorant-bronze-1.png", threshold: 100, color: "#8b6539" },
+  { name: "Bronze 2", img: "4376-valorant-bronze-2.png", threshold: 150, color: "#8b6539" },
+  { name: "Bronze 3", img: "4590-valorant-bronze-3.png", threshold: 200, color: "#8b6539" },
+  { name: "Silver 1", img: "6335-valorant-silver-1.png", threshold: 300, color: "#a5a9b0" },
+  { name: "Silver 2", img: "8138-valorant-silver-2.png", threshold: 450, color: "#a5a9b0" },
+  { name: "Silver 3", img: "3293-valorant-silver-3.png", threshold: 600, color: "#a5a9b0" },
+  { name: "Gold 1", img: "5533-valorant-gold-1.png", threshold: 800, color: "#d2b350" },
+  { name: "Gold 2", img: "2060-valorant-gold-2.png", threshold: 1000, color: "#d2b350" },
+  { name: "Gold 3", img: "3293-valorant-gold-3.png", threshold: 1500, color: "#d2b350" },
+  { name: "Platinum 1", img: "4590-valorant-platinum-1.png", threshold: 2000, color: "#259ba8" },
+  { name: "Platinum 2", img: "3255-valorant-platinum-2.png", threshold: 3000, color: "#259ba8" },
+  { name: "Platinum 3", img: "5816-valorant-platinum-3.png", threshold: 4000, color: "#259ba8" },
+  { name: "Diamond 1", img: "4590-valorant-diamond-1.png", threshold: 5500, color: "#9c7df6" },
+  { name: "Diamond 2", img: "3939-valorant-diamond-2.png", threshold: 7500, color: "#9c7df6" },
+  { name: "Diamond 3", img: "6354-valorant-diamond-3.png", threshold: 10000, color: "#9c7df6" },
+  { name: "Ascendant 1", img: "4590-valorant-ascendant-1.png", threshold: 15000, color: "#21b184" },
+  { name: "Ascendant 2", img: "8376-valorant-ascendant-2.png", threshold: 20000, color: "#21b184" },
+  { name: "Ascendant 3", img: "2309-valorant-ascendant-3.png", threshold: 25000, color: "#21b184" },
+  { name: "Immortal 1", img: "1518-valorant-immortal-1.png", threshold: 35000, color: "#b93444" },
+  { name: "Immortal 2", img: "1775-valorant-immortal-2.png", threshold: 50000, color: "#b93444" },
+  { name: "Immortal 3", img: "5979-valorant-immortal-3.png", threshold: 75000, color: "#b93444" },
+  { name: "RADIANT", img: "5979-valorant-radiant.png", threshold: Infinity, color: "#ffffaa" },
+]
+
+function RankTab({ user, repoData }: { user: GHUser | null, repoData: ReposData | null }) {
+  const [revealed, setRevealed] = useState(false);
+  const [revealing, setRevealing] = useState(false);
+
+  const score = useMemo(() => {
+    if (!user || !repoData) return 0;
+    return (repoData.totalStars * 10) + (user.followers * 5) + (repoData.totalForks * 2) + (user.public_repos * 1);
+  }, [user, repoData]);
+
+  const rank = useMemo(() => {
+    return RANKS.find(r => score <= r.threshold) || RANKS[RANKS.length - 1];
+  }, [score]);
+
+  const handleReveal = () => {
+    setRevealing(true);
+    setTimeout(() => {
+      setRevealed(true);
+      setRevealing(false);
+    }, 2000);
+  };
+
+  if (!revealed) {
+    return (
+      <div className="py-12 flex flex-col items-center justify-center gap-4">
+        {revealing ? (
+          <div className="flex flex-col items-center gap-4">
+            <div className="relative">
+              <div className="absolute inset-0 bg-red-500/20 rounded-full blur-xl animate-pulse"></div>
+              <Trophy className="size-12 text-muted-foreground animate-bounce relative z-10" />
+            </div>
+            <p className="font-mono text-sm uppercase tracking-widest animate-pulse">Calculating MMR...</p>
+          </div>
+        ) : (
+          <>
+            <div className="text-center space-y-1 mb-4">
+              <h3 className="font-mono text-lg font-bold uppercase tracking-widest">Developer Rank</h3>
+              <p className="text-xs text-muted-foreground font-mono">Based on your GitHub impact, stars, and following</p>
+            </div>
+            <Button onClick={handleReveal} size="lg" className="font-mono uppercase tracking-widest bg-red-500 hover:bg-red-600 text-white font-bold px-8 relative overflow-hidden group">
+              <span className="relative z-10">Click to Reveal Rank</span>
+              <div className="absolute inset-0 bg-black/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
+            </Button>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="py-8 flex flex-col items-center justify-center gap-6 animate-in fade-in zoom-in duration-500">
+      <div className="relative">
+        <div className="absolute inset-0 blur-3xl opacity-30 scale-150 rounded-full" style={{ backgroundColor: rank!.color }}></div>
+        <img src={`/${rank!.img}`} alt={rank!.name} className="w-32 h-32 object-contain relative z-10 drop-shadow-2xl hover:scale-110 transition-transform duration-500" />
+      </div>
+      
+      <div className="text-center space-y-2 relative z-10">
+        <h2 className="text-4xl font-black italic tracking-tighter uppercase drop-shadow-md" style={{ color: rank!.color, textShadow: `0 0 20px ${rank!.color}80` }}>
+          {rank!.name}
+        </h2>
+        <div className="flex items-center justify-center gap-3 text-sm font-mono text-muted-foreground">
+          <span className="bg-muted px-2 py-1 rounded">Score: {score.toLocaleString()}</span>
+          <span className="bg-muted px-2 py-1 rounded">Top {(Math.max(0.1, 100 - (score / 1000))).toFixed(1)}%</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── AI Panel ──
-function AIPanel({ username }: { username: string }) {
+function AIPanel({ username, user, repoData }: { username: string, user: GHUser | null, repoData: ReposData | null }) {
   const [tab, setTab] = useState("summary")
   const [data, setData] = useState<Record<string, {content:string;loading:boolean;error:string}>>({
     summary:{content:"",loading:false,error:""},
@@ -249,6 +344,7 @@ function AIPanel({ username }: { username: string }) {
     {key:"summary",label:"Profile",icon:<Zap className="size-3"/>},
     {key:"advice",label:"Advice",icon:<Lightbulb className="size-3"/>},
     {key:"roast",label:"Roast",icon:<Flame className="size-3"/>},
+    {key:"rank",label:"Rank",icon:<Trophy className="size-3"/>},
   ]
 
   return (
@@ -258,12 +354,12 @@ function AIPanel({ username }: { username: string }) {
           <CardTitle className="text-xs font-mono text-muted-foreground uppercase tracking-widest">AI Insights</CardTitle>
           <p className="font-mono text-[10px] text-muted-foreground/50 mt-0.5">llama-3.3-70b · Groq</p>
         </div>
-        <Button variant="ghost" size="icon-sm" onClick={()=>gen(tab,true)} disabled={data[tab]?.loading} title="Regenerate">
+        <Button variant="ghost" size="icon-sm" onClick={()=>gen(tab,true)} disabled={data[tab]?.loading || tab === "rank"} title="Regenerate">
           <RefreshCw className={`size-3 ${data[tab]?.loading?"animate-spin":""}`}/>
         </Button>
       </CardHeader>
       <CardContent>
-        <Tabs value={tab} onValueChange={v=>{setTab(v);if(!data[v]?.content&&!data[v]?.loading)gen(v)}}>
+        <Tabs value={tab} onValueChange={v=>{setTab(v);if(v!=="rank"&&!data[v]?.content&&!data[v]?.loading)gen(v)}}>
           <TabsList className="mb-5 h-8 gap-0.5">
             {tabs.map(t=>(
               <TabsTrigger key={t.key} value={t.key} className="font-mono text-xs gap-1.5 h-6 px-3">
@@ -273,7 +369,9 @@ function AIPanel({ username }: { username: string }) {
           </TabsList>
           {tabs.map(t=>(
             <TabsContent key={t.key} value={t.key} className="mt-0">
-              {data[t.key]?.loading ? (
+              {t.key === "rank" ? (
+                <RankTab user={user} repoData={repoData} />
+              ) : data[t.key]?.loading ? (
                 <div className="flex items-center gap-2.5 text-xs text-muted-foreground font-mono py-8">
                   <Loader2 className="size-3.5 animate-spin"/> Composing analysis…
                 </div>
@@ -542,7 +640,7 @@ export default function DashboardPage() {
           <ContributionHeatmap username={user.login}/>
 
           {/* ⑦ AI Insights — full width */}
-          <AIPanel username={user.login}/>
+          <AIPanel username={user.login} user={user} repoData={repoData}/>
 
         </div>
 
