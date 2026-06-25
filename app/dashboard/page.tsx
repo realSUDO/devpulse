@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
@@ -14,7 +15,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import {
   Star, GitFork, Users, BookOpen, MapPin, Building2, AtSign, Globe,
   Loader2, RefreshCw, Zap, Lightbulb, Flame, ExternalLink,
-  GitCommitHorizontal, GitPullRequest, AlertCircle, GitBranch, CalendarDays, Trophy,
+  GitCommitHorizontal, GitPullRequest, AlertCircle, GitBranch, CalendarDays, Trophy, Crosshair,
 } from "lucide-react"
 
 interface GHUser {
