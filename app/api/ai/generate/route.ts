@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
   try {
     // Ensure user exists in DB — sync if missing
     let user = await prisma.user.findUnique({
-      where: { username: username.toLowerCase() },
+      where: { username: username },
       include: {
         repos: { orderBy: { stars: "desc" }, take: 10 },
         aiSummaries: { where: { type }, orderBy: { createdAt: "desc" }, take: 1 },
@@ -106,6 +106,7 @@ export async function POST(req: NextRequest) {
         topLanguages,
         topRepos,
         totalStars,
+        deepContext: user.deepAnalysisStatus === "COMPLETED" ? user.deepContext : null,
       })
     } else if (type === "roast") {
       content = await generateRoast({
@@ -115,6 +116,7 @@ export async function POST(req: NextRequest) {
         publicRepos: user.publicRepos,
         topLanguages,
         totalStars,
+        deepContext: user.deepAnalysisStatus === "COMPLETED" ? user.deepContext : null,
       })
     } else {
       content = await generateAdvice({
@@ -124,6 +126,7 @@ export async function POST(req: NextRequest) {
         publicRepos: user.publicRepos,
         followers: user.followers,
         totalStars,
+        deepContext: user.deepAnalysisStatus === "COMPLETED" ? user.deepContext : null,
       })
     }
 

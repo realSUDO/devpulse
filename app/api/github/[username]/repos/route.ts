@@ -17,7 +17,7 @@ export async function GET(
     const repos = await github.getRepos(username)
 
     // Find user in DB to associate repos
-    const user = await prisma.user.findUnique({ where: { username: username.toLowerCase() } })
+    const user = await prisma.user.findUnique({ where: { username: username } })
     if (user) {
       // Upsert top 20 repos into DB
       const top20 = repos

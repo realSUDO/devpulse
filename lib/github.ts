@@ -70,6 +70,30 @@ export interface GHLanguages {
   [lang: string]: number
 }
 
+export interface GHTreeNode {
+  path: string
+  mode: string
+  type: "blob" | "tree" | "commit"
+  size?: number
+  sha: string
+  url: string
+}
+
+export interface GHTree {
+  sha: string
+  url: string
+  tree: GHTreeNode[]
+  truncated: boolean
+}
+
+export interface GHCommit {
+  sha: string
+  commit: {
+    message: string
+    author: { name: string; date: string }
+  }
+}
+
 export const github = {
   getUser: (username: string) => ghFetch<GHUser>(`/users/${username}`),
 
@@ -83,4 +107,16 @@ export const github = {
 
   getRepoLanguages: (fullName: string) =>
     ghFetch<GHLanguages>(`/repos/${fullName}/languages`),
+
+  getTree: (fullName: string, sha = "HEAD", recursive = false) =>
+    ghFetch<GHTree>(`/repos/${fullName}/git/trees/${sha}${recursive ? "?recursive=1" : ""}`),
+
+  getCommits: (fullName: string, perPage = 20) =>
+    ghFetch<GHCommit[]>(`/repos/${fullName}/commits?per_page=${perPage}`),
+
+  getFileContent: async (fullName: string, path: string) => {
+    const res = await fetch(`https://raw.githubusercontent.com/${fullName}/HEAD/${path}`)
+    if (!res.ok) throw new Error(`Failed to fetch file: ${res.status}`)
+    return res.text()
+  },
 }

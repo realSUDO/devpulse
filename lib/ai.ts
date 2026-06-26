@@ -15,6 +15,7 @@ interface ProfileInput {
   topLanguages: string[]
   topRepos: RepoInput[]
   totalStars: number
+  deepContext?: string | null
 }
 
 export async function generateSummary(profile: ProfileInput): Promise<string> {
@@ -23,6 +24,8 @@ export async function generateSummary(profile: ProfileInput): Promise<string> {
     .join("\n")
 
   const prompt = `Write a GitHub developer profile analysis. Be direct and specific. No fluff, no vague praise, no formal language. Write like a senior dev explaining something to a coworker.
+
+${profile.deepContext ? `We have deeply analyzed their actual codebase, commit history, and file structures. Here is the deep context:\n\n${profile.deepContext}\n\nUSE THIS DEEP CONTEXT to generate incredibly specific and accurate insights.` : ""}
 
 Developer: ${profile.name ?? profile.username} (@${profile.username})
 Bio: ${profile.bio ?? "(none)"}
@@ -75,8 +78,11 @@ export async function generateRoast(profile: {
   publicRepos: number
   topLanguages: string[]
   totalStars: number
+  deepContext?: string | null
 }): Promise<string> {
   const prompt = `You are a dry, sharp British senior engineer. Roast this developer's GitHub profile.
+
+${profile.deepContext ? `We have deeply analyzed their actual codebase, commit history, and file structures. Here is the deep context:\n\n${profile.deepContext}\n\nUSE THIS DEEP CONTEXT to generate incredibly specific, brutally accurate, and code-based roasts. Mock their specific bad commit messages, point out their abandoned/bottom repos, and call out their structural choices (e.g., having a Dockerfile but no CI/CD).` : ""}
 
 @${profile.username}
 Bio: "${profile.bio ?? "(no bio)"}"
@@ -123,12 +129,15 @@ export async function generateAdvice(profile: {
   publicRepos: number
   followers: number
   totalStars: number
+  deepContext?: string | null
 }): Promise<string> {
   const repoRows = profile.topRepos.slice(0, 6)
     .map(r => `| \`${r.name}\` | ${r.language ?? "?"} | ${r.stars} |`)
     .join("\n")
 
   const prompt = `Give specific, practical career and engineering advice for this developer. Be direct. No motivational language, no vague tips.
+
+${profile.deepContext ? `We have deeply analyzed their actual codebase, commit history, and file structures. Here is the deep context:\n\n${profile.deepContext}\n\nUSE THIS DEEP CONTEXT to give extremely practical code-level and architectural advice based on their real habits and commit messages.` : ""}
 
 @${profile.username} · ${profile.publicRepos} repos · ${profile.followers} followers · ${profile.totalStars} stars
 Languages: ${profile.topLanguages.join(", ")}
@@ -168,6 +177,58 @@ Now write advice for @${profile.username}.`
     messages: [{ role: "user", content: prompt }],
     max_tokens: 550,
     temperature: 0.55,
+  })
+  return res.choices[0]?.message?.content?.trim() ?? ""
+}
+
+export async function generateComparison(
+  userA: { username: string; topLanguages: string[]; publicRepos: number; totalStars: number; followers: number; totalCommits: number; deepScore: number; rank: string; percentiles: Record<string, string>; deepContext?: string | null },
+  userB: { username: string; topLanguages: string[]; publicRepos: number; totalStars: number; followers: number; totalCommits: number; deepScore: number; rank: string; percentiles: Record<string, string>; deepContext?: string | null }
+): Promise<string> {
+  const prompt = `You are a ruthless but fair senior engineer judging a developer showdown. Compare these two developers and declare a winner based heavily on their DevPulse Rank, Code Quality, and Percentiles.
+
+User A (@${userA.username}):
+${userA.publicRepos} repos, ${userA.totalStars} stars, ${userA.followers} followers, ${userA.totalCommits} commits
+DevPulse Rank: ${userA.rank}
+Percentiles: Stars (${userA.percentiles.stars}%), Commits (${userA.percentiles.commits}%), Followers (${userA.percentiles.followers}%), Code Quality (${userA.percentiles.quality}%), Impact (${userA.percentiles.impact}%)
+Top Languages: ${userA.topLanguages.join(", ")}
+${userA.deepContext ? `Deep Context:\n${userA.deepContext.slice(0, 5000)}` : ""}
+
+User B (@${userB.username}):
+${userB.publicRepos} repos, ${userB.totalStars} stars, ${userB.followers} followers, ${userB.totalCommits} commits
+DevPulse Rank: ${userB.rank}
+Percentiles: Stars (${userB.percentiles.stars}%), Commits (${userB.percentiles.commits}%), Followers (${userB.percentiles.followers}%), Code Quality (${userB.percentiles.quality}%), Impact (${userB.percentiles.impact}%)
+Top Languages: ${userB.topLanguages.join(", ")}
+${userB.deepContext ? `Deep Context:\n${userB.deepContext.slice(0, 5000)}` : ""}
+
+Write a Markdown response with the following exact structure:
+
+[WINNER]: <username of winner>
+
+[A sharp, witty 2-sentence summary declaring a clear winner and why. No ties allowed. Do NOT include a heading like "The Verdict", just write the paragraph.]
+
+| Category | @${userA.username} | @${userB.username} | Winner |
+|----------|-------------------|-------------------|--------|
+| Stars | ... | ... | ... |
+| Commits | ... | ... | ... |
+| Followers | ... | ... | ... |
+| Code Quality | ... | ... | ... |
+| Impact | ... | ... | ... |
+
+[One short paragraph roasting the loser based on their stats or deep context. Do NOT include a heading like "The Roast", just write the paragraph.]
+
+IMPORTANT RULES:
+- If you see "API rate limit exceeded" or similar errors in the Deep Context, IGNORE IT. Do NOT mention API limits or errors.
+- Keep the table cell contents EXTREMELY BRIEF—max 2 to 4 words per cell!
+- Do not use generic words like "Low" or "High", but also avoid overly obscure slang. Use clear, descriptive 2-4 word phrases (e.g., "Solid Architecture", "Needs Work", "Strong Presence", "Barely Active", "Impressive Impact").
+- The 'Winner' column MUST logically match whoever has the better descriptive phrase/percentile for that specific row. Do NOT declare someone the winner of a row if their performance is worse!
+- DO NOT explicitly use the phrase "Deep Score". Talk about "Code Quality" or "Architecture" instead.`
+
+  const res = await groq.chat.completions.create({
+    model: MODEL,
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 600,
+    temperature: 0.7,
   })
   return res.choices[0]?.message?.content?.trim() ?? ""
 }

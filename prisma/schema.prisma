@@ -27,6 +27,10 @@ model User {
   updatedAt       DateTime @updatedAt
   lastSynced      DateTime @default(now())
 
+  deepAnalysisStatus String   @default("NONE") // "NONE", "PENDING", "COMPLETED", "FAILED"
+  deepScore          Int?
+  deepContext        String?  @db.Text
+
   repos       Repo[]
   aiSummaries AISummary[]
   sessions    Session[]

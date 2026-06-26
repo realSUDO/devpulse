@@ -1,19 +1,52 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
+import { useEffect, useState, useMemo } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import {
   Star, GitFork, Users, BookOpen, MapPin, Building2, AtSign, Globe,
   Loader2, GitCommitHorizontal, GitPullRequest, AlertCircle,
-  GitBranch, Zap, Crosshair,
+  GitBranch, Zap, Crosshair, Trophy,
 } from "lucide-react"
+
+function MD({ src }: { src: string }) {
+  return (
+    <div className="ai-prose">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({children}) => <p>{children}</p>,
+          h1: ({children}) => <h1>{children}</h1>,
+          h2: ({children}) => <h2>{children}</h2>,
+          h3: ({children}) => <h3>{children}</h3>,
+          ul: ({children}) => <ul>{children}</ul>,
+          ol: ({children}) => <ol>{children}</ol>,
+          li: ({children}) => <li>{children}</li>,
+          strong: ({children}) => <strong>{children}</strong>,
+          em: ({children}) => <em>{children}</em>,
+          code: ({children}) => <code>{children}</code>,
+          a: ({href,children}) => <a href={href} target="_blank" rel="noreferrer">{children}</a>,
+          blockquote: ({children}) => <blockquote>{children}</blockquote>,
+          table: ({children}) => <div className="table-wrap"><table>{children}</table></div>,
+          thead: ({children}) => <thead>{children}</thead>,
+          tbody: ({children}) => <tbody>{children}</tbody>,
+          tr: ({children}) => <tr>{children}</tr>,
+          th: ({children}) => <th>{children}</th>,
+          td: ({children}) => <td>{children}</td>,
+          hr: () => <hr/>,
+        }}
+      >{src}</ReactMarkdown>
+    </div>
+  )
+}
 
 interface GHUser {
   login: string; name: string | null; avatar_url: string; bio: string | null
@@ -36,13 +69,16 @@ interface ActivityItem { id: string; type: string; repo: string; description: st
 interface UserData {
   profile: GHUser | null
   repos: ReposData | null
-  activity: ActivityItem[]
+  activity: any[]
+  contributions: any | null
   profileLoading: boolean
   reposLoading: boolean
   activityLoading: boolean
+  contributionsLoading: boolean
   profileError: string
   reposError: string
   activityError: string
+  contributionsError: string
 }
 
 const LANG_COLORS: Record<string, string> = {
@@ -123,11 +159,17 @@ function MiniHeatmap({ username }: { username: string }) {
   )
 }
 
+import { getRankInfo } from "@/lib/ranks"
+
 function UserProfileCard({ user, repos }: { user: GHUser; repos: ReposData | null }) {
   const joinYear = new Date(user.created_at).getFullYear()
+  const rank = getRankInfo(user, repos).rank
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-3">
+    <div className="space-y-3 relative">
+      <div className="absolute top-0 right-0">
+        <img src={`/${rank.img}`} alt={rank.name} className="w-10 h-10 object-contain opacity-80" title={`Rank: ${rank.name}`} />
+      </div>
+      <div className="flex items-center gap-3 pr-12">
         <Avatar size="lg" className="rounded-xl">
           <AvatarImage src={user.avatar_url} alt={user.login}/>
           <AvatarFallback className="rounded-xl text-xs">{user.login.slice(0,2).toUpperCase()}</AvatarFallback>
@@ -164,58 +206,117 @@ function UserProfileCard({ user, repos }: { user: GHUser; repos: ReposData | nul
   )
 }
 
-export default function ComparePage() {
+import { Suspense } from "react"
+
+function ComparePageContent() {
+  const searchParams = useSearchParams()
   const router = useRouter()
-  const [userA, setUserA] = useState("")
+  const [userA, setUserA] = useState(searchParams?.get("a") || "")
   const [userB, setUserB] = useState("")
   const [submitted, setSubmitted] = useState(false)
-  const [authLoading, setAuthLoading] = useState(true)
+
+  // Hide the ?a= parameter from the URL after reading it
+  useEffect(() => {
+    if (searchParams?.has("a")) {
+      window.history.replaceState(null, '', '/compare')
+    }
+  }, [searchParams])
 
   const [left, setLeft] = useState<UserData>({
-    profile:null,repos:null,activity:[],
-    profileLoading:false,reposLoading:false,activityLoading:false,
-    profileError:"",reposError:"",activityError:"",
+    profile:null,repos:null,activity:[],contributions:null,
+    profileLoading:false,reposLoading:false,activityLoading:false,contributionsLoading:false,
+    profileError:"",reposError:"",activityError:"",contributionsError:"",
   })
   const [right, setRight] = useState<UserData>({
-    profile:null,repos:null,activity:[],
-    profileLoading:false,reposLoading:false,activityLoading:false,
-    profileError:"",reposError:"",activityError:"",
+    profile:null,repos:null,activity:[],contributions:null,
+    profileLoading:false,reposLoading:false,activityLoading:false,contributionsLoading:false,
+    profileError:"",reposError:"",activityError:"",contributionsError:"",
   })
 
-  useEffect(() => {
-    fetch("/api/auth/me").then(r => { if (!r.ok) router.push("/signin") }).finally(() => setAuthLoading(false))
-  }, [router])
+  const [aiMarkdown, setAiMarkdown] = useState("")
+  const [aiWinner, setAiWinner] = useState<string | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+
+  const leftLoading = left.profileLoading || left.reposLoading || left.activityLoading || left.contributionsLoading
+  const rightLoading = right.profileLoading || right.reposLoading || right.activityLoading || right.contributionsLoading
+  const bothLoaded = left.profile && right.profile && !leftLoading && !rightLoading
+
+  // Radar Chart Data Calculation
+  const radarData = useMemo(() => {
+    if (!bothLoaded || !left.profile || !right.profile) return []
+
+    const calcPercentiles = (user: any, repos: any, contributions: any) => {
+      const stars = repos?.totalStars ?? 0
+      const commits = contributions?.total?.lastYear ?? ((user?.public_repos ?? 0) * 15)
+      const followers = user?.followers ?? 0
+      const deepScore = user?.deepScore ?? 0
+
+      const pStars = Math.min(99.9, Math.max(0, (Math.log10(Math.max(1, stars)) / 4.5) * 100))
+      const pCommits = Math.min(99.9, Math.max(0, (Math.log10(Math.max(1, commits)) / 4) * 100))
+      const pFollowers = Math.min(99.9, Math.max(0, (Math.log10(Math.max(1, followers)) / 4) * 100))
+      const pQuality = user?.deepScore 
+        ? Math.min(99.9, Math.max(0, (Math.log10(Math.max(1, deepScore)) / 5) * 100))
+        : Math.min(99.9, Math.max(0, (Math.log10(Math.max(1, (stars * 2) / Math.max(1, user?.public_repos ?? 1))) / 2.5) * 100 + 15))
+      
+      const impactVal = (followers * 10) + ((repos?.totalForks ?? 0) * 5)
+      const pImpact = Math.min(99.9, Math.max(0, (Math.log10(Math.max(1, impactVal)) / 5) * 100))
+
+      return { stars: pStars, commits: pCommits, followers: pFollowers, quality: pQuality, impact: pImpact }
+    }
+
+    const pA = calcPercentiles(left.profile, left.repos, left.contributions)
+    const pB = calcPercentiles(right.profile, right.repos, right.contributions)
+
+    return [
+      { subject: 'Stars', A: pA.stars, B: pB.stars },
+      { subject: 'Commits', A: pA.commits, B: pB.commits },
+      { subject: 'Followers', A: pA.followers, B: pB.followers },
+      { subject: 'Quality', A: pA.quality, B: pB.quality },
+      { subject: 'Impact', A: pA.impact, B: pB.impact },
+    ]
+  }, [bothLoaded, left, right])
 
   async function fetchUser(username: string, side: "left" | "right") {
     const setter = side === "left" ? setLeft : setRight
-    setter(p => ({...p, profileLoading:true, reposLoading:true, activityLoading:true, profileError:"", reposError:"", activityError:""}))
-
-    const [pRes, rRes, aRes] = await Promise.all([
+    setter(p => ({
+      ...p, 
+      profileLoading:true, reposLoading:true, activityLoading:true, contributionsLoading:true,
+      profileError:"", reposError:"", activityError:"", contributionsError:""
+    }))
+    
+    const [pRes, rRes, aRes, cRes] = await Promise.all([
       fetch(`/api/github/${username}/profile`),
       fetch(`/api/github/${username}/repos`),
       fetch(`/api/github/${username}/activity`),
+      fetch(`/api/github/${username}/contributions`),
     ])
 
     if (pRes.ok) {
-      const profile = await pRes.json() as GHUser
+      const profile = await pRes.json()
       setter(p => ({...p, profile, profileLoading:false}))
     } else {
-      const err = await pRes.json() as { error?: string }
-      setter(p => ({...p, profile:null, profileLoading:false, profileError: err.error ?? "Failed to load profile"}))
+      setter(p => ({...p, profile:null, profileLoading:false, profileError: "Failed to load profile"}))
     }
 
     if (rRes.ok) {
-      const repos = await rRes.json() as ReposData
+      const repos = await rRes.json()
       setter(p => ({...p, repos, reposLoading:false}))
     } else {
       setter(p => ({...p, repos:null, reposLoading:false, reposError: "Failed to load repos"}))
     }
 
     if (aRes.ok) {
-      const d = await aRes.json() as { activity: ActivityItem[] }
-      setter(p => ({...p, activity: d.activity, activityLoading:false}))
+      const d = await aRes.json()
+      setter(p => ({...p, activity: d.activity || [], activityLoading:false}))
     } else {
       setter(p => ({...p, activity:[], activityLoading:false, activityError: "Failed to load activity"}))
+    }
+
+    if (cRes.ok) {
+      const contributions = await cRes.json()
+      setter(p => ({...p, contributions, contributionsLoading:false}))
+    } else {
+      setter(p => ({...p, contributions:null, contributionsLoading:false, contributionsError: "Failed to load contributions"}))
     }
   }
 
@@ -223,23 +324,36 @@ export default function ComparePage() {
     e.preventDefault()
     if (!userA.trim() || !userB.trim()) return
     setSubmitted(true)
-    await Promise.all([
+    setAiLoading(true)
+    
+    Promise.all([
       fetchUser(userA.trim(), "left"),
       fetchUser(userB.trim(), "right"),
-    ])
+    ]).then(() => {
+      // Trigger AI after stats are mostly loaded
+      fetch("/api/ai/compare", {
+        method: "POST",
+        body: JSON.stringify({ userA: userA.trim(), userB: userB.trim() })
+      })
+      .then(r => r.json())
+      .then(d => {
+        setAiMarkdown(d.markdown ?? "Failed to generate comparison.")
+        setAiWinner(d.winner?.replace('@', '') ?? null)
+      })
+      .catch(() => setAiMarkdown("Failed to generate comparison."))
+      .finally(() => setAiLoading(false))
+    })
   }
 
   function reset() {
     setSubmitted(false)
+    setAiMarkdown("")
+    setAiWinner(null)
+    setAiLoading(false)
     setLeft({profile:null,repos:null,activity:[],profileLoading:false,reposLoading:false,activityLoading:false,profileError:"",reposError:"",activityError:""})
     setRight({profile:null,repos:null,activity:[],profileLoading:false,reposLoading:false,activityLoading:false,profileError:"",reposError:"",activityError:""})
   }
 
-  if (authLoading) return (
-    <div className="flex min-h-svh items-center justify-center">
-      <Loader2 className="size-4 animate-spin text-muted-foreground"/>
-    </div>
-  )
 
   if (!submitted) {
     return (
@@ -292,10 +406,6 @@ export default function ComparePage() {
       </div>
     )
   }
-
-  const leftLoading = left.profileLoading || left.reposLoading
-  const rightLoading = right.profileLoading || right.reposLoading
-  const bothLoaded = left.profile && right.profile && !leftLoading && !rightLoading
 
   const leftLangs = left.repos ? Object.entries(left.repos.languages).sort((a,b)=>b[1]-a[1]).slice(0,6) : []
   const rightLangs = right.repos ? Object.entries(right.repos.languages).sort((a,b)=>b[1]-a[1]).slice(0,6) : []
@@ -350,6 +460,83 @@ export default function ComparePage() {
           </div>
         ) : bothLoaded ? (
           <>
+            {/* ── Showdown Header ── */}
+            <div className="flex items-center justify-center gap-8 mb-12 mt-12 pt-8">
+              <div className="relative flex flex-col items-center gap-4">
+                {aiWinner?.toLowerCase() === left.profile?.login.toLowerCase() && (
+                  <img src="/crown.png" alt="Winner" className="absolute -top-14 left-0 size-24 drop-shadow-2xl z-10 animate-in fade-in zoom-in -rotate-12" />
+                )}
+                <Avatar className="size-48 border-4 border-muted shadow-2xl">
+                  <AvatarImage src={left.profile?.avatar_url} />
+                  <AvatarFallback className="text-4xl">{left.profile?.login[0]?.toUpperCase()}</AvatarFallback>
+                </Avatar>
+                <div className="text-center">
+                  <h2 className="font-bold text-2xl">{left.profile?.name || left.profile?.login}</h2>
+                  <p className="font-mono text-sm text-muted-foreground">@{left.profile?.login}</p>
+                </div>
+              </div>
+
+              <div className="text-6xl font-black italic tracking-tighter text-muted-foreground/20 px-8">
+                VS
+              </div>
+
+              <div className="relative flex flex-col items-center gap-4">
+                {aiWinner?.toLowerCase() === right.profile?.login.toLowerCase() && (
+                  <img src="/crown.png" alt="Winner" className="absolute -top-14 left-0 size-24 drop-shadow-2xl z-10 animate-in fade-in zoom-in -rotate-12" />
+                )}
+                <Avatar className="size-48 border-4 border-muted shadow-2xl">
+                  <AvatarImage src={right.profile?.avatar_url} />
+                  <AvatarFallback className="text-4xl">{right.profile?.login[0]?.toUpperCase()}</AvatarFallback>
+                </Avatar>
+                <div className="text-center">
+                  <h2 className="font-bold text-2xl">{right.profile?.name || right.profile?.login}</h2>
+                  <p className="font-mono text-sm text-muted-foreground">@{right.profile?.login}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* ── AI Comparison ── */}
+            <Card className="shadow-md bg-muted/20 border-primary/20 relative overflow-hidden mb-6">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm font-mono tracking-widest uppercase">
+                  <Trophy className="size-4 text-primary" /> Verdict
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="max-w-none">
+                {aiLoading ? (
+                  <div className="flex flex-col items-center justify-center py-8 gap-3 text-muted-foreground">
+                    <Loader2 className="size-6 animate-spin text-primary" />
+                    <p className="font-mono text-xs animate-pulse">Analyzing massive amounts of code and commit history...</p>
+                  </div>
+                ) : aiMarkdown ? (
+                  <MD src={aiMarkdown} />
+                ) : null}
+              </CardContent>
+            </Card>
+
+            {/* ── Overlaid Radar Chart ── */}
+            <Card className="shadow-md mb-6">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-mono tracking-widest uppercase">Radar Comparison</CardTitle>
+              </CardHeader>
+              <CardContent className="h-[450px] w-full pt-4">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart cx="50%" cy="50%" outerRadius="65%" data={radarData}>
+                    <PolarGrid gridType="polygon" stroke="#525252" strokeWidth={1.5} />
+                    <PolarAngleAxis dataKey="subject" tick={{ fill: "currentColor", fontSize: 13, fontFamily: "monospace", fontWeight: "bold" }} />
+                    <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", borderRadius: "8px", fontSize: "14px", fontFamily: "monospace" }}
+                      itemStyle={{ fontWeight: "bold" }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: "14px", fontFamily: "monospace", paddingTop: "10px", fontWeight: "bold" }} />
+                    <Radar name={`@${left.profile?.login}`} dataKey="A" stroke="#3b82f6" strokeWidth={3} fill="#3b82f6" fillOpacity={0.4} />
+                    <Radar name={`@${right.profile?.login}`} dataKey="B" stroke="#ef4444" strokeWidth={3} fill="#ef4444" fillOpacity={0.4} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
             {/* ── Profile Stats ── */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
@@ -575,5 +762,17 @@ export default function ComparePage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function ComparePage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-svh items-center justify-center">
+        <Loader2 className="size-4 animate-spin text-muted-foreground"/>
+      </div>
+    }>
+      <ComparePageContent />
+    </Suspense>
   )
 }

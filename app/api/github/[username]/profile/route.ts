@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getSessionUser } from "@/lib/session"
 import { github } from "@/lib/github"
 import { prisma } from "@/lib/prisma"
+import { inngest } from "@/lib/inngest/client"
 
 // GET /api/github/[username]/profile
 export async function GET(
@@ -49,7 +50,18 @@ export async function GET(
       },
     })
 
-    return NextResponse.json({ ...ghUser, dbId: user.id, lastSynced: user.lastSynced })
+    if (user.deepAnalysisStatus === "NONE") {
+      try {
+        await inngest.send({
+          name: "app/analyze.codebase",
+          data: { username: ghUser.login },
+        })
+      } catch (err) {
+        console.error("Failed to trigger inngest job:", err)
+      }
+    }
+
+    return NextResponse.json({ ...ghUser, dbId: user.id, lastSynced: user.lastSynced, deepAnalysisStatus: user.deepAnalysisStatus, deepScore: user.deepScore })
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error"
     return NextResponse.json({ error: message }, { status: 500 })

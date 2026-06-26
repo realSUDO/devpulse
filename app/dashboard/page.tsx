@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
+import loadingMessages from "@/lib/loading-messages.json"
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -23,6 +24,8 @@ interface GHUser {
   company: string | null; location: string | null; blog: string | null
   twitter_username: string | null; followers: number; following: number
   public_repos: number; created_at: string; html_url: string
+  deepAnalysisStatus?: "NONE" | "PENDING" | "COMPLETED" | "FAILED"
+  deepScore?: number | null
 }
 interface Contribution { date: string; count: number; level: 0|1|2|3|4 }
 interface Repo {
@@ -219,54 +222,106 @@ function MD({ src }: { src: string }) {
   )
 }
 
-const RANKS = [
-  { name: "Iron 1", img: "3624-valorant-iron-1.png", threshold: 10, color: "#4f5154" },
-  { name: "Iron 2", img: "7351-valorant-iron-2.png", threshold: 25, color: "#4f5154" },
-  { name: "Iron 3", img: "1854-valorant-iron-3.png", threshold: 50, color: "#4f5154" },
-  { name: "Bronze 1", img: "4159-valorant-bronze-1.png", threshold: 100, color: "#8b6539" },
-  { name: "Bronze 2", img: "4376-valorant-bronze-2.png", threshold: 150, color: "#8b6539" },
-  { name: "Bronze 3", img: "4590-valorant-bronze-3.png", threshold: 200, color: "#8b6539" },
-  { name: "Silver 1", img: "6335-valorant-silver-1.png", threshold: 300, color: "#a5a9b0" },
-  { name: "Silver 2", img: "8138-valorant-silver-2.png", threshold: 450, color: "#a5a9b0" },
-  { name: "Silver 3", img: "3293-valorant-silver-3.png", threshold: 600, color: "#a5a9b0" },
-  { name: "Gold 1", img: "5533-valorant-gold-1.png", threshold: 800, color: "#d2b350" },
-  { name: "Gold 2", img: "2060-valorant-gold-2.png", threshold: 1000, color: "#d2b350" },
-  { name: "Gold 3", img: "3293-valorant-gold-3.png", threshold: 1500, color: "#d2b350" },
-  { name: "Platinum 1", img: "4590-valorant-platinum-1.png", threshold: 2000, color: "#259ba8" },
-  { name: "Platinum 2", img: "3255-valorant-platinum-2.png", threshold: 3000, color: "#259ba8" },
-  { name: "Platinum 3", img: "5816-valorant-platinum-3.png", threshold: 4000, color: "#259ba8" },
-  { name: "Diamond 1", img: "4590-valorant-diamond-1.png", threshold: 5500, color: "#9c7df6" },
-  { name: "Diamond 2", img: "3939-valorant-diamond-2.png", threshold: 7500, color: "#9c7df6" },
-  { name: "Diamond 3", img: "6354-valorant-diamond-3.png", threshold: 10000, color: "#9c7df6" },
-  { name: "Ascendant 1", img: "4590-valorant-ascendant-1.png", threshold: 15000, color: "#21b184" },
-  { name: "Ascendant 2", img: "8376-valorant-ascendant-2.png", threshold: 20000, color: "#21b184" },
-  { name: "Ascendant 3", img: "2309-valorant-ascendant-3.png", threshold: 25000, color: "#21b184" },
-  { name: "Immortal 1", img: "1518-valorant-immortal-1.png", threshold: 35000, color: "#b93444" },
-  { name: "Immortal 2", img: "1775-valorant-immortal-2.png", threshold: 50000, color: "#b93444" },
-  { name: "Immortal 3", img: "5979-valorant-immortal-3.png", threshold: 75000, color: "#b93444" },
-  { name: "RADIANT", img: "5979-valorant-radiant.png", threshold: Infinity, color: "#ffffaa" },
-]
+import { RANKS, getRankInfo } from "@/lib/ranks"
 
 function RankTab({ user, repoData }: { user: GHUser | null, repoData: ReposData | null }) {
   const [revealed, setRevealed] = useState(false);
   const [revealing, setRevealing] = useState(false);
+  const [msgIdx, setMsgIdx] = useState(0);
+  const rankRef = useRef<HTMLDivElement>(null);
+
+  // Cycle loading messages if pending
+  useEffect(() => {
+    if (user?.deepAnalysisStatus === "PENDING") {
+      const interval = setInterval(() => {
+        setMsgIdx(Math.floor(Math.random() * loadingMessages.length));
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [user?.deepAnalysisStatus]);
 
   const score = useMemo(() => {
-    if (!user || !repoData) return 0;
-    return (repoData.totalStars * 10) + (user.followers * 5) + (repoData.totalForks * 2) + (user.public_repos * 1);
+    return getRankInfo(user, repoData).score;
   }, [user, repoData]);
 
+  const [commits, setCommits] = useState((user?.public_repos ?? 0) * 15)
+
+  useEffect(() => {
+    if (user?.login) {
+      fetch(`/api/github/${user.login}/contributions`)
+        .then(r => r.json())
+        .then(d => {
+          if (d.total?.lastYear) setCommits(d.total.lastYear)
+        })
+        .catch(() => {})
+    }
+  }, [user?.login])
+
+  const percentiles = useMemo(() => {
+    const stars = repoData?.totalStars ?? 0;
+    const followers = user?.followers ?? 0;
+    const deepScore = user?.deepScore ?? 0;
+    
+    // Logarithmic distribution curves (approximations)
+    const pStars = Math.min(99.9, Math.max(0, (Math.log10(Math.max(1, stars)) / 4.5) * 100));
+    const pCommits = Math.min(99.9, Math.max(0, (Math.log10(Math.max(1, commits)) / 4) * 100));
+    const pFollowers = Math.min(99.9, Math.max(0, (Math.log10(Math.max(1, followers)) / 4) * 100));
+    
+    const pQuality = user?.deepScore
+      ? Math.min(99.9, Math.max(0, (Math.log10(Math.max(1, deepScore)) / 5) * 100))
+      : Math.min(99.9, Math.max(0, (Math.log10(Math.max(1, (stars * 2) / Math.max(1, user?.public_repos ?? 1))) / 2.5) * 100 + 15));
+      
+    const impactVal = (followers * 10) + ((repoData?.totalForks ?? 0) * 5);
+    const pImpact = Math.min(99.9, Math.max(0, (Math.log10(Math.max(1, impactVal)) / 5) * 100));
+
+    return { 
+      stars: pStars.toFixed(0), 
+      commits: pCommits.toFixed(0), 
+      followers: pFollowers.toFixed(0), 
+      quality: pQuality.toFixed(0), 
+      impact: pImpact.toFixed(0) 
+    };
+  }, [user, repoData, commits]);
+
   const rank = useMemo(() => {
-    return RANKS.find(r => score <= r.threshold) || RANKS[RANKS.length - 1];
-  }, [score]);
+    return getRankInfo(user, repoData).rank;
+  }, [score, user, repoData]);
+
+  const radarData = useMemo(() => [
+    { subject: 'Stars', value: Number(percentiles.stars) },
+    { subject: 'Commits', value: Number(percentiles.commits) },
+    { subject: 'Followers', value: Number(percentiles.followers) },
+    { subject: 'Quality', value: Number(percentiles.quality) },
+    { subject: 'Impact', value: Number(percentiles.impact) },
+  ], [percentiles]);
 
   const handleReveal = () => {
     setRevealing(true);
     setTimeout(() => {
       setRevealed(true);
       setRevealing(false);
+      setTimeout(() => {
+        rankRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 100);
     }, 2000);
   };
+
+  if (user?.deepAnalysisStatus === "PENDING") {
+    return (
+      <div className="py-12 flex flex-col items-center justify-center gap-6">
+        <div className="relative">
+          <div className="absolute inset-0 bg-red-500/20 rounded-full blur-xl animate-pulse"></div>
+          <Loader2 className="size-12 text-muted-foreground animate-spin relative z-10" />
+        </div>
+        <div className="text-center space-y-2">
+          <h3 className="font-mono text-lg font-bold uppercase tracking-widest text-red-500">Calibrating Rank</h3>
+          <p className="text-xs text-muted-foreground font-mono animate-pulse min-h-[20px] transition-all">
+            {loadingMessages[msgIdx]}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (!revealed) {
     return (
@@ -277,13 +332,13 @@ function RankTab({ user, repoData }: { user: GHUser | null, repoData: ReposData 
               <div className="absolute inset-0 bg-red-500/20 rounded-full blur-xl animate-pulse"></div>
               <Trophy className="size-12 text-muted-foreground animate-bounce relative z-10" />
             </div>
-            <p className="font-mono text-sm uppercase tracking-widest animate-pulse">Calculating MMR...</p>
+            <p className="font-mono text-sm uppercase tracking-widest animate-pulse">Locking in MMR...</p>
           </div>
         ) : (
           <>
             <div className="text-center space-y-1 mb-4">
               <h3 className="font-mono text-lg font-bold uppercase tracking-widest">Developer Rank</h3>
-              <p className="text-xs text-muted-foreground font-mono">Based on your GitHub impact, stars, and following</p>
+              <p className="text-xs text-muted-foreground font-mono">Based on your GitHub impact, stars, and deep codebase analysis</p>
             </div>
             <Button onClick={handleReveal} size="lg" className="font-mono uppercase tracking-widest bg-red-500 hover:bg-red-600 text-white font-bold px-8 relative overflow-hidden group">
               <span className="relative z-10">Click to Reveal Rank</span>
@@ -296,20 +351,51 @@ function RankTab({ user, repoData }: { user: GHUser | null, repoData: ReposData 
   }
 
   return (
-    <div className="py-8 flex flex-col items-center justify-center gap-6 animate-in fade-in zoom-in duration-500">
-      <div className="relative">
-        <div className="absolute inset-0 blur-3xl opacity-30 scale-150 rounded-full" style={{ backgroundColor: rank!.color }}></div>
-        <img src={`/${rank!.img}`} alt={rank!.name} className="w-32 h-32 object-contain relative z-10 drop-shadow-2xl hover:scale-110 transition-transform duration-500" />
-      </div>
+    <div ref={rankRef} className="py-12 w-full flex flex-col items-center justify-center animate-in fade-in zoom-in duration-500">
       
-      <div className="text-center space-y-2 relative z-10">
-        <h2 className="text-4xl font-black italic tracking-tighter uppercase drop-shadow-md" style={{ color: rank!.color, textShadow: `0 0 20px ${rank!.color}80` }}>
-          {rank!.name}
-        </h2>
-        <div className="flex items-center justify-center gap-3 text-sm font-mono text-muted-foreground">
-          <span className="bg-muted px-2 py-1 rounded">Score: {score.toLocaleString()}</span>
-          <span className="bg-muted px-2 py-1 rounded">Top {(Math.max(0.1, 100 - (score / 1000))).toFixed(1)}%</span>
+      {/* 2-Column Layout */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-8 w-full max-w-5xl mx-auto px-8 sm:px-16">
+        
+        {/* Left Column: Badge & Title */}
+        <div className="flex-1 flex flex-col items-center text-center space-y-2 relative z-10">
+          <div className="relative w-24 h-24 sm:w-32 sm:h-32 flex justify-center items-center mb-2">
+            <div className="absolute inset-0 blur-3xl opacity-30 scale-150 rounded-full" style={{ backgroundColor: rank!.color }}></div>
+            <img src={`/${rank!.img}`} alt="" className="w-20 h-20 sm:w-28 sm:h-28 object-contain relative z-10 drop-shadow-2xl hover:scale-110 transition-transform duration-500" />
+          </div>
+          
+          <h2 className="text-4xl sm:text-5xl font-black italic tracking-tighter uppercase drop-shadow-md" style={{ color: rank!.color, textShadow: `0 0 20px ${rank!.color}80` }}>
+            {rank!.name}
+          </h2>
+          <div className="flex items-center justify-center gap-3 text-xs font-mono text-muted-foreground pt-1">
+            <span className="bg-muted px-4 py-2 rounded-md font-semibold tracking-wider">Score: {score.toLocaleString()}</span>
+          </div>
         </div>
+
+        {/* Right Column: Spider Graph */}
+        <div className="flex-1 relative w-full max-w-[450px] min-h-[350px] aspect-square flex justify-center items-center z-20 sm:pr-8">
+          <ResponsiveContainer width="100%" height="100%" minHeight={350} minWidth={300}>
+            <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
+              <PolarGrid stroke="var(--border)" />
+              <PolarAngleAxis 
+                dataKey="subject" 
+                tick={{ fill: "var(--foreground)", fontSize: 13, fontFamily: "var(--font-mono)", fontWeight: "bold" }}
+              />
+              <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+              <Radar 
+                name="Percentile" 
+                dataKey="value" 
+                stroke={rank!.color} 
+                fill={rank!.color} 
+                fillOpacity={0.4} 
+              />
+              <Tooltip 
+                contentStyle={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:"8px", fontSize:12, fontFamily:"var(--font-mono)" }}
+                formatter={(value: number) => [`${value}%`, 'Percentile']}
+              />
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
+
       </div>
     </div>
   );
@@ -403,22 +489,42 @@ export default function DashboardPage() {
   const [error, setError] = useState("")
 
   useEffect(() => {
-    async function load() {
+    let pollInterval: NodeJS.Timeout;
+
+    async function load(isPoll = false) {
+      if (!isPoll) setLoading(true)
       const me = await fetch("/api/auth/me")
-      if (!me.ok) { router.push("/signin"); return }
+      if (!me.ok) { if (!isPoll) router.push("/signin"); return }
       const { username } = await me.json() as { username: string }
+      
       const [p, r, a] = await Promise.all([
         fetch(`/api/github/${username}/profile`),
-        fetch(`/api/github/${username}/repos`),
-        fetch(`/api/github/${username}/activity`),
+        !isPoll ? fetch(`/api/github/${username}/repos`) : Promise.resolve(null),
+        !isPoll ? fetch(`/api/github/${username}/activity`) : Promise.resolve(null),
       ])
-      if (p.status === 401) { router.push("/signin"); return }
-      if (p.ok) setUser(await p.json() as GHUser)
-      if (r.ok) setRepoData(await r.json() as ReposData)
-      if (a.ok) { const d = await a.json() as {activity:ActivityItem[]}; setActivity(d.activity) }
-      setLoading(false)
+      
+      if (p.status === 401) { if (!isPoll) router.push("/signin"); return }
+      if (p.ok) {
+        const userData = await p.json() as GHUser
+        setUser(userData)
+        // If pending, set up polling every 5 seconds
+        if (userData.deepAnalysisStatus === "PENDING" && !pollInterval) {
+          pollInterval = setInterval(() => load(true), 5000)
+        } else if (userData.deepAnalysisStatus !== "PENDING" && pollInterval) {
+          clearInterval(pollInterval)
+        }
+      }
+      if (r && r.ok) setRepoData(await r.json() as ReposData)
+      if (a && a.ok) { const d = await a.json() as {activity:ActivityItem[]}; setActivity(d.activity) }
+      
+      if (!isPoll) setLoading(false)
     }
+
     load().catch(e => { setError(String(e)); setLoading(false) })
+
+    return () => {
+      if (pollInterval) clearInterval(pollInterval)
+    }
   }, [router])
 
   async function signOut() {
@@ -462,7 +568,7 @@ export default function DashboardPage() {
             <span className="font-mono text-xs text-muted-foreground">
               devpulse<span className="text-foreground font-medium">/{user.login}</span>
             </span>
-            <Link href="/compare" className="font-mono text-[10px] text-muted-foreground hover:text-foreground transition-colors hidden sm:inline-flex items-center gap-1">
+            <Link href={`/compare?a=${user.login}`} className="font-mono text-[10px] text-muted-foreground hover:text-foreground transition-colors hidden sm:inline-flex items-center gap-1">
               <Crosshair className="size-3"/> Compare
             </Link>
           </div>
